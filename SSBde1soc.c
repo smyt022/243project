@@ -5,6 +5,10 @@
 #ifndef __SYSTEM_INFO__
 #define __SYSTEM_INFO__
 
+//#include "address_map_nios2.h"
+#include <string.h>
+#include <stdbool.h>
+
 #define BOARD				"DE1-SoC"
 
 /* Memory */
@@ -57,9 +61,6 @@
 
 #endif
 
-//#include "address_map_nios2.h"
-#include <string.h>
-
 //globals
 struct fb_t {
     unsigned short volatile pixels[256][512];
@@ -74,33 +75,23 @@ struct player {
     int xCoord;
     int yCoord;
     short playerSprite[256];//16 by 16 sprites s
+
+    int yVelocity;
+    int xVelocity;
+    int timeInAir;
+
 };
 
 struct player playerOne;
-struct player PlayerTwo;
+struct player playerTwo;
+
+//double buffering
+int pixel_buffer_start; // global variable
+int pixel_back_buffer_start; // global variable
+int pixel_status;
 
 
 //sprites: 16 by 16 RRGGGBB as integers
-/*
-short sans[] = {
-	65535,65535,65535,65535,31727,59196,65535,65535,65535,65535,63454,54970,50744,65535,65535,65535,
-	65535,65535,65535,52889,55002,55002,57051,65535,65535,61341,54970,61277,38034,65535,65535,65535,
-	65535,65535,65535,44373,65535,8452,10565,65535,63454,46486,0,40147,35921,65503,65535,65535,
-	65535,65535,65535,59196,48599,35921,35953,46518,14823,50744,31695,50744,40147,65535,65535,65535,
-	65535,65535,65535,48599,40211,25356,44373,40147,38034,42292,38034,40179,16936,65503,65535,65535,
-	65535,65535,65535,50744,52825,40147,25356,21130,16904,16872,25388,50776,38034,65535,65535,65535,
-	65535,65535,65535,54970,0,21130,33808,38034,38034,38034,27469,10533,21130,65503,65535,65535,
-	65535,65535,52857,10862,10565,16937,23275,31727,14791,33808,12678,23276,8683,21163,65503,65535,
-	65535,65503,27569,15123,10796,27502,14791,27501,33808,21130,21163,19117,10863,13042,52858,65535,
-	65535,59228,13042,17302,12976,10895,12777,59196,59164,35953,10829,8716,15188,17400,25455,65535,
-	65535,65535,31859,17334,13041,13042,10697,50712,59196,27501,13009,8716,17399,17235,54970,65535,
-	65535,65535,65535,25388,4358,17301,4391,0,0,0,13074,8618,4358,57051,65535,65535,
-	65535,65535,65535,61309,0,33,0,0,0,0,33,0,29614,65535,65535,65535,
-	65535,65535,65535,52857,0,0,0,21130,52889,4226,0,0,14791,65535,65535,65535,
-	65535,65535,65503,35953,25356,46486,33808,54938,65535,25356,44373,44405,25324,50744,65535,65535,
-	65535,65535,65535,40179,27501,27501,46518,63422,65535,55002,35953,27501,27501,57115,65535,65535,
-};
-*/
 short sans[] = {
 	0,0,0,0,31727,59196,65535,65535,65535,65535,63454,54970,50744,0,0,0,
 	0,0,0,52889,55002,55002,57051,65535,65535,61341,54970,61277,38034,0,0,0,
@@ -366,8 +357,8 @@ short battlefield_bg[] = {
 };
 
 
+
 /* function prototypes */
-void HEX_PS2(char, char, char);
 void LED_PS2(char b3);
 void HANDLE_KEYBOARD_INPUTS(char b3);
 void solid_color(struct fb_t *const fbp, unsigned short color);
@@ -378,20 +369,52 @@ void S_KEY_PRESSED();
 void D_KEY_PRESSED();
 void draw_map();
 
+//cc. gravity
+void update_physics_on_ground(struct player *player);
+bool on_ground(int x, int y);
+void gravity(int * y_mov, int in_velocity, int clkloop);
+
+int ground_level = 125; //dictates ground level\
+
+//cc. collision
+void playerCollision(struct player *player1, struct player *player2);
 
 /*******************************************************************************
- * This program demonstrates use of the PS/2 port by displaying the last three
- * bytes of data received from the PS/2 port on the HEX displays.
+ MAIN CODE
  ******************************************************************************/
 int main(void) {
+	
+	//buffering registers
+	volatile int * pixel_ctrl0_ptr = (int *)0xFF203020;    
+	pixel_buffer_start = *pixel_ctrl0_ptr;
+	
+	volatile int * pixel_ctrl1_ptr = (int *)0xFF203024;    
+	pixel_back_buffer_start = *pixel_ctrl1_ptr;
+	
+	//cc. pixel registers, for the back register
+	volatile int * pixel_ctrl_3 = (int *)0xFF20302C;
+	pixel_status = *pixel_ctrl_3;
 
-    //player attributes
-    playerOne.xCoord = 100;//starting position
-    playerOne.yCoord = 100;
+    //player1 attributes
     memcpy(playerOne.playerSprite, sans, sizeof(sans)); // Copy the sans sprite data
+    playerOne.xCoord = 80;//starting position
+    playerOne.yCoord = ground_level;
 
-    draw_map();//all white
-	sprite_draw(fbp, playerOne.playerSprite, 16, 16, playerOne.xCoord, playerOne.yCoord);
+    playerOne.xVelocity = 0;
+    playerOne.yVelocity = 0;
+    playerOne.timeInAir = 0;
+
+    //player2 attributes
+    memcpy(playerTwo.playerSprite, sans, sizeof(sans)); 
+    playerTwo.xCoord = 160;//starting position
+    playerTwo.yCoord = ground_level;
+
+    playerTwo.xVelocity = 0;
+    playerTwo.yVelocity = 0;
+    playerTwo.timeInAir = 0;
+
+    //solid_color(fbp, 0xffff);//all white
+    draw_map();
 
     //keyboard polling
     unsigned char byte1 = 0;
@@ -404,18 +427,44 @@ int main(void) {
 	int PS2_data, RVALID;
 
 
+    //game loop
 	while (1) {
+        //UPDATING NATURAL GAME PHYSICS (without user input)
+
+        gravity(&playerOne.yVelocity, playerOne.yVelocity, playerOne.timeInAir); //update y velocity due to (gravity)
+        
+        //edge case. if the y-velocity causes the sprite to descend below ground level
+        if (playerOne.yCoord + playerOne.yVelocity > ground_level) {
+            //also make sure it is within xBounds of platform
+            if(playerOne.xCoord >= 60 && playerOne.xCoord <= 250){
+                //set the player to ground level
+                playerOne.yCoord = ground_level;
+                playerOne.yVelocity = 0;
+            }
+        }
+
+        //check if on ground, update physics attribtues
+        update_physics_on_ground(&playerOne);
+
+        
+        //update for player collisions
+        playerCollision(&playerOne, &playerTwo); 
+
+
+        //KEYBOARD POLLING
 		PS2_data = *(PS2_ptr);	// read the Data register in the PS/2 port
 		RVALID = (PS2_data & 0x8000);	// extract the RVALID field
+
 		if (RVALID != 0)
 		{
-			// always save the last three bytes received
+			/* always save the last three bytes received */
 			byte1 = byte2;
 			byte2 = byte3;
 			byte3 = PS2_data & 0xFF;
 		}
 
-        HEX_PS2(byte1, byte2, byte3);
+        //at the start of the loop, xvelocity should be zero until it is updated
+        playerOne.xVelocity = 0;
 
 		// Check if a key is pressed (not released)
 		if (byte2 == 0xF0 && byte3 != 0x00) {
@@ -428,7 +477,7 @@ int main(void) {
             A_KEY_PRESSED();
 			*RLEDs = 0b0100000000; 
 		} else if (byte2 != 0xF0 && byte3 == 0x1B) {//S
-            S_KEY_PRESSED();
+            //S_KEY_PRESSED();
 			*RLEDs = 0b0010000000; 
 		} else if (byte2 != 0xF0 && byte3 == 0x23) {//D
             D_KEY_PRESSED();
@@ -437,11 +486,52 @@ int main(void) {
 			// Otherwise, turn off the LEDs
 			*RLEDs = 0b1; // Turn off all LEDs
 		}
+
+
+        //update position due to velocity
+        playerOne.yCoord = playerOne.yCoord + playerOne.yVelocity;
+        playerOne.xCoord = playerOne.xCoord + playerOne.xVelocity;
+
+        playerTwo.yCoord = playerTwo.yCoord + playerTwo.yVelocity;
+        playerTwo.xCoord = playerTwo.xCoord + playerTwo.xVelocity;
+
+		//2. draw to backbuffer
+		
+        //redraw bg
+        //solid_color(fbp, 0xffff);//all white
+        draw_map();
+
+        //redraw sprite
+        sprite_draw(fbp, playerOne.playerSprite , 16, 16, playerOne.xCoord, playerOne.yCoord);
+        sprite_draw(fbp, playerTwo.playerSprite , 16, 16, playerTwo.xCoord, playerTwo.yCoord);
+
+		//3. buffer swap
 	}
 }
 
-void draw_map(){
-	sprite_draw(fbp, battlefield_bg, 320, 240, 0,0);
+
+//if on ground, reset jump physics attributes, else, update time in air
+void update_physics_on_ground(struct player *player){
+    if (on_ground(player->xCoord,player->yCoord + player->yVelocity)) {//
+        player->timeInAir = 0;
+        player->yVelocity = 0;
+    } else {    
+        player->timeInAir++;
+        //player->yVelocity = -6;//initial velocity upwards
+    }
+}
+
+//return true if on platform, false otherwise
+bool on_ground(int x, int y){
+    //320, 240
+    if(y == ground_level){
+        if(x >= 60 && x <= 250){ //around 60  <->250
+            return true;
+        }
+    }
+
+    //not on platform
+    return false;
 }
 
 void solid_color(struct fb_t *const fbp, unsigned short color) {
@@ -451,7 +541,24 @@ void solid_color(struct fb_t *const fbp, unsigned short color) {
     fbp->pixels[y][x] = color; // set pixel value at x,y
 }
 
-//
+void draw_map(){
+	sprite_draw(fbp, battlefield_bg, 320, 240, 0,0);
+}
+
+/*
+// assumes 16x16 sprite
+void sprite_draw(struct fb_t *const fbp, unsigned short sprite[], int spriteWidth, int spriteHeight, int xCord, int yCord) {
+    int xi, yi; //position for plotting pixles
+
+    //sprite is 16 by 16
+    for (int sxi = 0; sxi < spriteWidth; sxi++)
+        for (int syi = 0; syi < spriteHeight; syi++) {
+        xi = xCord + sxi;
+        yi = yCord + syi;
+        fbp->pixels[yi][xi] = sprite[syi*16+sxi];
+        }
+}
+*/
 void sprite_draw(struct fb_t *const fbp, unsigned short sprite[], int spriteWidth, int spriteHeight, int xCord, int yCord) {
     int xi, yi; //position for plotting pixles
 
@@ -464,120 +571,107 @@ void sprite_draw(struct fb_t *const fbp, unsigned short sprite[], int spriteWidt
     }
 }
 
-
-void LED_PS2(char b) {
-
-    //cc. reads the bit of the controller and outputs the LED
-    volatile int * LED_ptr = (int *)LED_BASE; //cc. LED_ptr
-
-    if (b == 29) {
-
-        *(LED_ptr) = 0b1000000000; //cc. wasd - move up
-
-    } else if (b == 28) {
-
-        *(LED_ptr) = 0b0100000000; //cc. wasd - move left
-
-    } else if (b == 27) {
-
-        *(LED_ptr) = 0b0010000000; //cc. wasd - move down
-        //*(LED_ptr) = 0b0001000000; //cc. wasd - move right
-
-    } else if (b == 35) {
-
-        *(LED_ptr) = 0b0001000000; //cc. wasd - move right
-        //*(LED_ptr) = 0b0010000000; //cc. wasd - move down
-
-    } else {
-
-        *(LED_ptr) = 0b0; //cc. default zero
-
-    }
-}
-
 void W_KEY_PRESSED(){// up
-    //update player 1 position
-    playerOne.yCoord -= 10;
-    //redraw bg
-    draw_map();//
-    //redraw sprite
-    sprite_draw(fbp, playerOne.playerSprite , 16, 16, playerOne.xCoord, playerOne.yCoord);
+    //check upper bound
+    if (playerOne.yCoord >= 20) {
+        //jump, if on ground (initial velocity) , OR can also jump on top of other player (player 2)
+        if(on_ground(playerOne.xCoord, playerOne.yCoord)
+            || (playerOne.yCoord == playerTwo.yCoord+16 && playerOne.xCoord<=playerTwo.xCoord+16 && playerOne.xCoord+16>=playerTwo.xCoord)
+        ){
+            playerOne.yVelocity = -6;//initial velocity upwards
+        }
+    }
 }
 void S_KEY_PRESSED(){//down
     //update player 1 position
-    playerOne.yCoord += 10;
-    //redraw bg
-    draw_map();
-    //redraw sprite
-    sprite_draw(fbp, playerOne.playerSprite , 16, 16, playerOne.xCoord, playerOne.yCoord);
+    if (playerOne.yCoord <= 190) {
+
+        playerOne.yCoord += 2;
+
+    }
 }
 void A_KEY_PRESSED(){
     //update player 1 position
-    playerOne.xCoord -= 10;
-    //redraw bg
-    draw_map();//all white
-    //redraw sprite
-    sprite_draw(fbp, playerOne.playerSprite , 16, 16, playerOne.xCoord, playerOne.yCoord);
+    if (playerOne.xCoord >= 30) {
+
+        playerOne.xVelocity = -2;
+    
+    } else {
+        playerOne.xVelocity = 0;
+    }
 }
+
 void D_KEY_PRESSED(){
-    //update player 1 position
-    playerOne.xCoord += 10;
-    //redraw bg
-    draw_map();//all white
-    //redraw sprite
-    sprite_draw(fbp, playerOne.playerSprite , 16, 16, playerOne.xCoord, playerOne.yCoord);
+
+    if (playerOne.xCoord <= 280) {
+
+        //update player 1 position
+        playerOne.xVelocity = 2;
+
+    } else {
+        playerOne.xVelocity = 0;
+    }
+
 }
 
-void HANDLE_KEYBOARD_INPUTS(char b) {
+//adds gravity
+void gravity(int * y_mov, int in_velocity, int clkloop) {
+	//in_velocity dont add negative, cuz it already has a negative value set (as player attribute when jump)
+	*y_mov = in_velocity + (int)(0.1 * clkloop); //0.1 is the gravitational constant
+    //playerOne.yCoord += *y_mov;
 
-    //cc. reads the bit of the controller and outputs the LED
-    volatile int * LED_ptr = (int *)LED_BASE; //cc. LED_ptr
+}
 
-    if (b == 29) {
 
-        W_KEY_PRESSED(); //cc. wasd - move up
+void playerCollision(struct player *player1, struct player *player2) {
 
-    } else if (b == 28) {
+    //player1 approaches from left
+    if (player1->xCoord + 16 == player2->xCoord && player1->yCoord + 16 > player2->yCoord && player1->xVelocity > 0) {
 
-        A_KEY_PRESSED(); //cc. wasd - move left
+        player2->xVelocity = player1->xVelocity;
 
-    } else if (b == 27) {
+    //player1 approaches from right
+    } else if (player1->xCoord == player2->xCoord + 16 && player1->yCoord + 16 > player2->yCoord && player1->xVelocity < 0) { 
 
-        S_KEY_PRESSED(); //cc. wasd - move down
+       player2->xVelocity = player1->xVelocity;
 
-    } else if (b == 35) {
+    } else {
 
-        D_KEY_PRESSED(); //cc. wasd - move right
+        player2->xVelocity = 0;
+        
 
     }
-}
+    
+    //edge case. if the y-velocity causes the sprite to descend further than the other sprite
+    if (player1->yCoord + player1->yVelocity >= player2->yCoord - 16 &&
+        player1->xCoord + 16 > player2->xCoord &&
+        player1->xCoord < player2->xCoord + 16) {
 
-/****************************************************************************************
- * Subroutine to show a string of HEX data on the HEX displays
-****************************************************************************************/
-void HEX_PS2(char b1, char b2, char b3) {
-    volatile int * HEX3_HEX0_ptr = (int *)HEX3_HEX0_BASE;
-    volatile int * HEX5_HEX4_ptr = (int *)HEX5_HEX4_BASE;
+            //playerOne.yVelocity = playerOne.yCoord - ground_level;
+            player1->yCoord = player2->yCoord - 16;
 
-    /* SEVEN_SEGMENT_DECODE_TABLE gives the on/off settings for all segments in
-     * a single 7-seg display in the DE1-SoC Computer, for the hex digits 0 - F
-     */
-    unsigned char seven_seg_decode_table[] = {
-        0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07,
-        0x7F, 0x67, 0x77, 0x7C, 0x39, 0x5E, 0x79, 0x71};
-    unsigned char hex_segs[] = {0, 0, 0, 0, 0, 0, 0, 0};
-    unsigned int  shift_buffer, nibble;
-    unsigned char code;
-    int           i;
-
-    shift_buffer = (b1 << 16) | (b2 << 8) | b3;
-    for (i = 0; i < 6; ++i) {
-        nibble = shift_buffer & 0x0000000F; // character is in rightmost nibble
-        code   = seven_seg_decode_table[nibble];
-        hex_segs[i]  = code;
-        shift_buffer = shift_buffer >> 4;
     }
-    /* drive the hex displays */
-    *(HEX3_HEX0_ptr) = *(int *)(hex_segs);
-    *(HEX5_HEX4_ptr) = *(int *)(hex_segs + 4);
+
+    //player1 approaches from above
+    if (player1->xCoord + 16 >= player2->xCoord &&
+        player1->xCoord <= player2->xCoord + 16 &&
+        player1->yCoord + 16 == player2->yCoord) {
+
+        player1->yVelocity = player2->yVelocity; //temporary
+
+    }
+
+    // player1 approaches from below
+    if (player1->xCoord + 16 >= player2->xCoord &&
+        player1->xCoord <= player2->xCoord + 16 &&
+        player1->yCoord == player2->yCoord + 16) {
+
+        player1->yVelocity += player2->yVelocity; // temporary
+
+    }
+     
 }
+
+//void x_PlayerCollision(struct player *player1, struct player *player2) {
+
+//}
