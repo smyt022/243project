@@ -2042,20 +2042,6 @@ void plot_next_pixel(int x, int y, short int line_color)
         *one_pixel_address = line_color;
 }
 
-/*
-//new sprite draw which causes a keyboard delay for p2 when backbuffer is not implemented
-void sprite_draw(struct fb_t *const fbp, unsigned short sprite[], int spriteWidth, int spriteHeight, int xCord, int yCord) {
-    int xi, yi; //position for plotting pixles
-
-    for (int sxi = 0; sxi < spriteWidth; sxi++)
-        for (int syi = 0; syi < spriteHeight; syi++) {
-        xi = xCord + sxi;
-        yi = yCord + syi;
-        //fbp->pixels[yi][xi] = sprite[syi*spriteWidth+sxi];
-        plot_pixel(xi, yi, sprite[syi*spriteWidth+sxi]);
-    }
-}
-*/
 
 //old sprite draw which doesn't cause a delay
 void sprite_draw(struct fb_t *const fbp, unsigned short sprite[], int spriteWidth, int spriteHeight, int xCord, int yCord) {
@@ -2173,23 +2159,6 @@ void RIGHT_KEY_PRESSED(){
 
 void x_playerCollision(struct player *player1, struct player *player2) {
 
-    /*
-    //edge case. if the y-velocity causes the sprite to go forward into the other sprite (from left)
-    if (player1->xCoord + player1->xVelocity <= player2->xCoord + allSpriteDims &&
-        player1->yCoord + allSpriteDims >= player2->yCoord &&
-        player1->yCoord < player2->yCoord + allSpriteDims ) {
-
-            playerOne.xCoord = playerTwo.xCoord - allSpriteDims;
-
-    //coming from the right
-    } else if (player1->xCoord + player1->xVelocity >= player2->xCoord &&
-        player1->yCoord + allSpriteDims >= player2->yCoord &&
-        player1->yCoord < player2->yCoord + allSpriteDims ) {
-
-            playerOne.xCoord = playerTwo.xCoord + allSpriteDims;
-    }
-    */
-
     volatile int * RLEDs = (int *) 0xFF200000;     // Red LEDs base address
 	*RLEDs = 0b0000000001;
 
@@ -2236,18 +2205,6 @@ void y_playerCollision(struct player *player1, struct player *player2) {
 
     }
 
-    /*
-
-    // player1 approaches from below
-    if (player1->xCoord + allSpriteDims  >= player2->xCoord &&
-        player1->xCoord <= player2->xCoord + allSpriteDims  &&
-        player1->yCoord == player2->yCoord + allSpriteDims ) {
-
-        player1->yVelocity += player2->yVelocity; // temporary
-
-    }
-    */
-
 }
 
 void callLoadingScreen(){
@@ -2288,49 +2245,3 @@ void buffer_swap() {
 	
 	
 }
-
-/* overlapping collision  code
-    volatile int * RLEDs = (int *) 0xFF200000;     // Red LEDs base address
-        *RLEDs = 0b1000000000;
-
-    //player1 approaches from left
-    if ((player1->xCoord + allSpriteDims) >= player2->xCoord && (player1->xCoord+allSpriteDims) <= (player2->xCoord+allSpriteDims)
-    && player1->yCoord == player2->yCoord) {
-
-        player2->xVelocity += player1->xVelocity;
-        *RLEDs = 0b0000000000;
-
-    //player1 approaches from right
-    } else if (player1->xCoord == (player2->xCoord + allSpriteDims) && player1->yCoord + allSpriteDims > player2->yCoord && player1->xVelocity < 0) { 
-
-       player2->xVelocity += player1->xVelocity;
-
-    } else {
-
-        player2->xVelocity = 0;
-        
-
-    }
-
-*/
-
-/* non overlapping collision code
-    //player1 approaches from left
-    if (player1->xCoord + allSpriteDims  == player2->xCoord && player1->yCoord + allSpriteDims  > player2->yCoord && player1->xVelocity > 0
-        && player1->xVelocity > 0) {
-
-        player2->xVelocity += player1->xVelocity;
-
-    //player1 approaches from right
-    } else if (player1->xCoord == player2->xCoord + allSpriteDims  && player1->yCoord + allSpriteDims > player2->yCoord && player1->xVelocity < 0
-        && player1->xVelocity < 0) { 
-
-       player2->xVelocity += player1->xVelocity;
-
-    } else {
-
-        player2->xVelocity = 0;
-        
-
-    }
-*/
